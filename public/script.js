@@ -1,138 +1,258 @@
-let selectedMethod = 'GET';
+// DOM elements
+const apiKeyInput = document.getElementById('apiKey');
+const rotationModeSelect = document.getElementById('rotationMode');
+const httpMethodSelect = document.getElementById('httpMethod');
+const queryParamsTextarea = document.getElementById('queryParams');
+const requestBodyTextarea = document.getElementById('requestBody');
+const requestBodyGroup = document.getElementById('requestBodyGroup');
+const callProxyBtn = document.getElementById('callProxyBtn');
+const clearBtn = document.getElementById('clearBtn');
+const loadingDiv = document.getElementById('loading');
+const resultsDiv = document.getElementById('results');
+const errorDiv = document.getElementById('error');
+const resultStatus = document.getElementById('resultStatus');
+const resultTime = document.getElementById('resultTime');
+const resultContent = document.getElementById('resultContent');
+const errorContent = document.getElementById('errorContent');
 
-// Initialize the page
+// Initialize page
 document.addEventListener('DOMContentLoaded', function() {
-    // Set up method button listeners
-    document.querySelectorAll('.method-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            document.querySelectorAll('.method-btn').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            selectedMethod = this.dataset.method;
-            
-            // Show/hide request body based on method
-            const dataGroup = document.getElementById('dataGroup');
-            if (['POST', 'PUT', 'PATCH'].includes(selectedMethod)) {
-                dataGroup.style.display = 'block';
-            } else {
-                dataGroup.style.display = 'none';
-            }
-        });
+    // Show/hide request body based on HTTP method
+    httpMethodSelect.addEventListener('change', function() {
+        const method = this.value;
+        if (['POST', 'PUT', 'PATCH'].includes(method)) {
+            requestBodyGroup.style.display = 'block';
+        } else {
+            requestBodyGroup.style.display = 'none';
+        }
     });
 
-    // Check service health on load
-    checkHealth();
+    // Add enter key support for API key input
+    apiKeyInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            callProxy();
+        }
+    });
 });
 
-async function testAPI() {
-    const publicKey = document.getElementById('publicKey').value;
-    const endpoint = document.getElementById('endpoint').value;
-    const requestBody = document.getElementById('requestBody').value;
-    const headersText = document.getElementById('headers').value;
-    
-    if (!publicKey) {
-        showResponse('Please enter a public API key', 'error');
-        return;
-    }
-    
-    if (!endpoint) {
-        showResponse('Please enter an endpoint', 'error');
+/**
+ * Main function to call the proxy API
+ */
+async function callProxy() {
+    const apiKey = apiKeyInput.value.trim();
+    const rotationMode = rotationModeSelect.value;
+    const httpMethod = httpMethodSelect.value;
+    const queryParamsText = queryParamsTextarea.value.trim();
+    const requestBodyText = requestBodyTextarea.value.trim();
+
+    // Validation
+    if (!apiKey) {
+        showError('Please enter a public API key');
         return;
     }
 
-    const testBtn = document.getElementById('testBtn');
-    const originalText = testBtn.innerHTML;
-    testBtn.innerHTML = '<span class="loading"></span>Testing...';
-    testBtn.disabled = true;
+    // Parse query parameters
+    let queryParams = {};
+    if (queryParamsText) {
+        try {
+            queryParams = JSON.parse(queryParamsText);
+        } catch (e) {
+            showError('Invalid JSON in query parameters');
+            return;
+        }
+    }
 
+    // Parse request body
+    let requestBody = null;
+    if (requestBodyText) {
+        try {
+            requestBody = JSON.parse(requestBodyText);
+        } catch (e) {
+            showError('Invalid JSON in request body');
+            return;
+        }
+    }
+
+    // Show loading state
+    showLoading();
+    
     try {
-        let headers = {};
-        if (headersText.trim()) {
-            try {
-                headers = JSON.parse(headersText);
-            } catch (e) {
-                showResponse('Invalid JSON in headers field', 'error');
-                return;
-            }
-        }
+        // Build request URL with rotation mode
+        const url = new URL('/api/proxy', window.location.origin);
+        url.searchParams.set('mode', rotationMode);
 
-        let data = null;
-        if (requestBody.trim() && ['POST', 'PUT', 'PATCH'].includes(selectedMethod)) {
-            try {
-                data = JSON.parse(requestBody);
-            } catch (e) {
-                showResponse('Invalid JSON in request body', 'error');
-                return;
-            }
-        }
-
-        const requestData = {
-            method: selectedMethod,
-            url: endpoint,
-            headers: headers
-        };
-
-        if (data) {
-            requestData.data = data;
-        }
-
-        const response = await fetch('/api', {
-            method: 'POST',
+        // Prepare request configuration
+        const fetchConfig = {
+            method: httpMethod,
             headers: {
                 'Content-Type': 'application/json',
-                'X-API-Key': publicKey
-            },
-            body: JSON.stringify(requestData)
+                'X-API-Key': apiKey
+            }
+        };
+
+        // Add query parameters to URL
+        Object.keys(queryParams).forEach(key => {
+            url.searchParams.set(key, queryParams[key]);
         });
 
-        const responseData = await response.json();
-        
-        if (response.ok) {
-            showResponse(JSON.stringify(responseData, null, 2), 'success');
-        } else {
-            showResponse(JSON.stringify(responseData, null, 2), 'error');
+        // Add request body for POST/PUT requests
+        if (requestBody && ['POST', 'PUT', 'PATCH'].includes(httpMethod)) {
+            fetchConfig.body = JSON.stringify(requestBody);
         }
 
-    } catch (error) {
-        showResponse(`Network Error: ${error.message}`, 'error');
-    } finally {
-        testBtn.innerHTML = originalText;
-        testBtn.disabled = false;
-    }
-}
+        console.log('Making request to:', url.toString());
+        console.log('Request config:', fetchConfig);
 
-async function checkHealth() {
-    const statusElement = document.getElementById('serviceStatus');
-    const healthBtn = document.getElementById('healthBtn');
-    
-    statusElement.textContent = 'Checking...';
-    
-    try {
-        const response = await fetch('/health');
+        // Make the API call
+        const response = await fetch(url.toString(), fetchConfig);
         const data = await response.json();
-        
+
         if (response.ok) {
-            statusElement.innerHTML = `<span style="color: #48bb78;">● Healthy</span> - ${data.availableKeys}/${data.totalKeys} keys available`;
-            statusElement.style.color = '#22543d';
+            showSuccess(data, response.status);
         } else {
-            statusElement.innerHTML = `<span style="color: #f56565;">● Unhealthy</span>`;
-            statusElement.style.color = '#742a2a';
+            showError(data.error || 'Unknown error', response.status, data);
         }
+
     } catch (error) {
-        statusElement.innerHTML = `<span style="color: #f56565;">● Error</span> - ${error.message}`;
-        statusElement.style.color = '#742a2a';
+        console.error('Network error:', error);
+        showError(`Network error: ${error.message}`);
+    } finally {
+        hideLoading();
     }
 }
 
-function showResponse(content, type = 'info') {
-    const responseDiv = document.getElementById('response');
-    const responseContent = document.getElementById('responseContent');
-    
-    responseDiv.style.display = 'block';
-    responseDiv.className = `response ${type}`;
-    responseContent.textContent = content;
+/**
+ * Show loading state
+ */
+function showLoading() {
+    loadingDiv.style.display = 'block';
+    resultsDiv.style.display = 'none';
+    errorDiv.style.display = 'none';
+    callProxyBtn.disabled = true;
+    callProxyBtn.innerHTML = '<span class="btn-icon">⏳</span> Processing...';
 }
 
-// Utility function to format JSON
+/**
+ * Hide loading state
+ */
+function hideLoading() {
+    loadingDiv.style.display = 'none';
+    callProxyBtn.disabled = false;
+    callProxyBtn.innerHTML = '<span class="btn-icon">🚀</span> Call Proxy API';
+}
+
+/**
+ * Show successful response
+ */
+function showSuccess(data, status) {
+    resultsDiv.style.display = 'block';
+    errorDiv.style.display = 'none';
+
+    // Update status badge
+    resultStatus.textContent = `${status} Success`;
+    resultStatus.className = 'status-badge success';
+    
+    // Update timestamp
+    resultTime.textContent = new Date().toLocaleString();
+
+    // Format and display response
+    const formattedResponse = JSON.stringify(data, null, 2);
+    resultContent.textContent = formattedResponse;
+
+    // Add syntax highlighting
+    applySyntaxHighlighting(resultContent);
+}
+
+/**
+ * Show error message
+ */
+function showError(message, status = null, data = null) {
+    errorDiv.style.display = 'block';
+    resultsDiv.style.display = 'none';
+
+    const errorContentText = status ? 
+        `Status: ${status}\nMessage: ${message}${data ? `\nDetails: ${JSON.stringify(data, null, 2)}` : ''}` :
+        message;
+
+    errorContent.textContent = errorContentText;
+}
+
+/**
+ * Clear all results
+ */
+function clearResults() {
+    resultsDiv.style.display = 'none';
+    errorDiv.style.display = 'none';
+    loadingDiv.style.display = 'none';
+}
+
+/**
+ * Load example configurations
+ */
+function loadExample(type) {
+    switch (type) {
+        case 'basic':
+            httpMethodSelect.value = 'GET';
+            queryParamsTextarea.value = '';
+            requestBodyTextarea.value = '';
+            rotationModeSelect.value = 'round-robin';
+            requestBodyGroup.style.display = 'none';
+            break;
+            
+        case 'withParams':
+            httpMethodSelect.value = 'GET';
+            queryParamsTextarea.value = JSON.stringify({
+                limit: 10,
+                page: 1,
+                category: 'users'
+            }, null, 2);
+            requestBodyTextarea.value = '';
+            rotationModeSelect.value = 'round-robin';
+            requestBodyGroup.style.display = 'none';
+            break;
+            
+        case 'post':
+            httpMethodSelect.value = 'POST';
+            queryParamsTextarea.value = '';
+            requestBodyTextarea.value = JSON.stringify({
+                name: 'John Doe',
+                email: 'john@example.com',
+                role: 'user'
+            }, null, 2);
+            rotationModeSelect.value = 'round-robin';
+            requestBodyGroup.style.display = 'block';
+            break;
+            
+        case 'randomMode':
+            httpMethodSelect.value = 'GET';
+            queryParamsTextarea.value = JSON.stringify({
+                limit: 5
+            }, null, 2);
+            requestBodyTextarea.value = '';
+            rotationModeSelect.value = 'random';
+            requestBodyGroup.style.display = 'none';
+            break;
+    }
+}
+
+/**
+ * Basic syntax highlighting for JSON
+ */
+function applySyntaxHighlighting(element) {
+    let json = element.textContent;
+    
+    // Add basic syntax highlighting
+    json = json
+        .replace(/(".*?")/g, '<span class="json-string">$1</span>')
+        .replace(/\b(true|false|null)\b/g, '<span class="json-boolean">$1</span>')
+        .replace(/\b-?\d+\.?\d*\b/g, '<span class="json-number">$&</span>');
+    
+    element.innerHTML = json;
+}
+
+/**
+ * Format JSON with proper indentation
+ */
 function formatJSON(obj) {
     try {
         return JSON.stringify(obj, null, 2);
@@ -141,82 +261,46 @@ function formatJSON(obj) {
     }
 }
 
-// Example requests for quick testing
-const exampleRequests = {
-    'GET Users': {
-        method: 'GET',
-        endpoint: '/users',
-        body: '',
-        headers: '{"Content-Type": "application/json"}'
-    },
-    'POST User': {
-        method: 'POST',
-        endpoint: '/users',
-        body: '{"name": "John Doe", "email": "john@example.com"}',
-        headers: '{"Content-Type": "application/json"}'
-    },
-    'GET Status': {
-        method: 'GET',
-        endpoint: '/status',
-        body: '',
-        headers: '{}'
-    }
-};
-
-// Add example buttons (optional enhancement)
-function addExampleButtons() {
-    const container = document.querySelector('.container');
-    const exampleDiv = document.createElement('div');
-    exampleDiv.style.marginTop = '20px';
-    exampleDiv.style.paddingTop = '20px';
-    exampleDiv.style.borderTop = '1px solid #e2e8f0';
-    
-    const title = document.createElement('h3');
-    title.textContent = 'Example Requests:';
-    title.style.marginBottom = '10px';
-    title.style.fontSize = '16px';
-    title.style.color = '#333';
-    
-    exampleDiv.appendChild(title);
-    
-    Object.keys(exampleRequests).forEach(name => {
-        const btn = document.createElement('button');
-        btn.textContent = name;
-        btn.style.cssText = 'margin: 5px; padding: 8px 12px; background: #edf2f7; border: 1px solid #cbd5e0; border-radius: 4px; cursor: pointer; font-size: 12px;';
-        btn.onclick = () => loadExample(exampleRequests[name]);
-        exampleDiv.appendChild(btn);
+/**
+ * Copy response to clipboard
+ */
+function copyToClipboard() {
+    const text = resultContent.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        // Show temporary success message
+        const originalText = callProxyBtn.innerHTML;
+        callProxyBtn.innerHTML = '<span class="btn-icon">✅</span> Copied!';
+        setTimeout(() => {
+            callProxyBtn.innerHTML = originalText;
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy:', err);
     });
-    
-    container.appendChild(exampleDiv);
 }
 
-function loadExample(example) {
-    // Set method
-    document.querySelectorAll('.method-btn').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.dataset.method === example.method) {
-            btn.classList.add('active');
-        }
-    });
-    selectedMethod = example.method;
-    
-    // Set endpoint
-    document.getElementById('endpoint').value = example.endpoint;
-    
-    // Set body
-    document.getElementById('requestBody').value = example.body;
-    
-    // Set headers
-    document.getElementById('headers').value = example.headers;
-    
-    // Show/hide body field
-    const dataGroup = document.getElementById('dataGroup');
-    if (['POST', 'PUT', 'PATCH'].includes(selectedMethod)) {
-        dataGroup.style.display = 'block';
-    } else {
-        dataGroup.style.display = 'none';
+// Add keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    // Ctrl/Cmd + Enter to call API
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        callProxy();
     }
-}
+    
+    // Escape to clear results
+    if (e.key === 'Escape') {
+        clearResults();
+    }
+});
 
-// Auto-refresh health status every 30 seconds
-setInterval(checkHealth, 30000);
+// Add copy button functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-btn';
+    copyBtn.innerHTML = '📋 Copy';
+    copyBtn.onclick = copyToClipboard;
+    
+    const resultHeader = document.querySelector('.result-header');
+    if (resultHeader) {
+        resultHeader.appendChild(copyBtn);
+    }
+});

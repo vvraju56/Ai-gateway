@@ -6,6 +6,9 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 
+// Note: This server.js is for local development only
+// For Vercel deployment, use api/index.js (serverless functions)
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
