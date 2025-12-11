@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/*.js",
+      "src": "api/proxy.js",
       "use": "@vercel/node"
     },
     {
@@ -12,20 +12,12 @@
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "src": "/api/proxy",
+      "dest": "/api/proxy.js"
     },
     {
       "src": "/(.*)",
       "dest": "/public/$1"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  },
-  "functions": {
-    "api/proxy.js": {
-      "maxDuration": 30
-    }
-  }
+  ]
 }
