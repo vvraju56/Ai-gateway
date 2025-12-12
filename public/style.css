@@ -39,36 +39,6 @@ body {
     max-width: 600px;
 }
 
-.deploy-section {
-    margin-top: 2rem;
-}
-
-.deploy-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    background: #000000;
-    color: white;
-    text-decoration: none;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.9rem;
-    transition: all 0.3s ease;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.deploy-btn:hover {
-    background: #ffffff;
-    color: #000000;
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-}
-
-.deploy-btn i {
-    font-size: 1rem;
-}
-
 .container {
     width: 90%;
     max-width: 1100px;
