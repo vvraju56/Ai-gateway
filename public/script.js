@@ -1,244 +1,130 @@
 // DOM Elements
 const envFileInput = document.getElementById('envFile');
-const keysTextarea = document.getElementById('keyInput');
-const encodedTextarea = document.getElementById('encodedOutput');
-const publicKeyInput = document.getElementById('publicKey');
-const rotationModeSelect = document.getElementById('rotationMode');
-const requestMethodSelect = document.getElementById('requestMethod');
-const jsonResponsePre = document.getElementById('jsonResponse');
-const fileUploadArea = document.getElementById('fileUploadArea');
-const extractedKeysInfo = document.getElementById('extractedKeysInfo');
-const extractedCountSpan = document.getElementById('extractedCount');
-const copyResponseBtn = document.getElementById('copyResponse');
+const multiKeysTextarea = document.getElementById('multiKeys');
+const combinedKeyTextarea = document.getElementById('combinedKey');
 
-// Event Listeners
-if (envFileInput) {
-    envFileInput.addEventListener('change', handleEnvFile);
-}
-
-if (fileUploadArea) {
-    fileUploadArea.addEventListener('click', () => {
-        envFileInput.click();
-    });
-    
-    fileUploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        fileUploadArea.style.borderColor = 'rgba(106, 17, 203, 0.5)';
-        fileUploadArea.style.background = 'rgba(255, 255, 255, 0.08)';
-    });
-    
-    fileUploadArea.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        fileUploadArea.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-        fileUploadArea.style.background = 'rgba(255, 255, 255, 0.05)';
-    });
-    
-    fileUploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        fileUploadArea.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-        fileUploadArea.style.background = 'rgba(255, 255, 255, 0.05)';
-        
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            handleFileUpload(files[0]);
-        }
-    });
-}
-
-// Multi API Key Combiner Functions
+// Main Functions
 function combineKeys() {
-    const inputText = keysTextarea.value.trim();
-    
-    if (!inputText) {
-        showNotification('Please enter at least one API key', 'error');
+    const rawInput = document.getElementById("multiKeys").value.trim();
+
+    if (!rawInput) {
+        showNotification("Please paste API keys first.", "warning");
         return;
     }
-    
-    // Split by lines and remove empty lines
-    const keys = inputText.split('\n')
-        .map(key => key.trim())
-        .filter(key => key.length > 0);
-    
+
+    const keys = rawInput.split("\n")
+        .map(k => k.trim())
+        .filter(k => k.length > 0);
+
     if (keys.length === 0) {
-        showNotification('Please enter valid API keys', 'error');
+        showNotification("Please enter valid API keys", "warning");
         return;
     }
-    
-    // Create the combined object
+
+    // Create a combined encoded key
     const combinedObj = {
         keys: keys,
         created: Math.floor(Date.now() / 1000) // Unix timestamp
     };
-    
-    // Encode to base64
-    const jsonString = JSON.stringify(combinedObj);
-    const encodedKey = btoa(jsonString);
-    
-    // Display the result
-    encodedTextarea.value = encodedKey;
-    showNotification(`Successfully combined ${keys.length} API keys`, 'success');
+
+    const encoded = btoa(JSON.stringify(combinedObj));
+
+    document.getElementById("combinedKey").value = encoded;
+    showNotification(`Successfully combined ${keys.length} API keys`, "success");
 }
 
-// .env File Handler Functions
-function handleEnvFile(event) {
-    const file = event.target.files[0];
-    if (file) {
-        handleFileUpload(file);
+function copyCombined() {
+    const output = document.getElementById("combinedKey");
+    const text = output.value.trim();
+    
+    if (!text) {
+        showNotification("No combined key to copy", "warning");
+        return;
+    }
+    
+    // Modern clipboard API
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => {
+            showNotification("Combined key copied!", "success");
+        }).catch(() => {
+            fallbackCopy(text);
+        });
+    } else {
+        fallbackCopy(text);
     }
 }
 
-function handleFileUpload(file) {
+function fallbackCopy(text) {
+    const output = document.getElementById("combinedKey");
+    output.select();
+    document.execCommand('copy');
+    showNotification("Combined key copied!", "success");
+}
+
+// .env File Reader Function
+function readEnvFile() {
+    const fileInput = document.getElementById("envFile");
+    const file = fileInput.files[0];
+
+    if (!file) return;
+
     if (!file.name.endsWith('.env')) {
-        showNotification('Please upload a .env file', 'error');
+        showNotification("Please upload a .env file", "error");
         return;
     }
-    
+
     const reader = new FileReader();
-    reader.onload = function(e) {
-        const content = e.target.result;
-        const keys = parseEnvFile(content);
-        
-        if (keys.length > 0) {
-            // Add extracted keys to the textarea
-            const existingKeys = keysTextarea.value.trim();
-            const allKeys = existingKeys ? [...keys, ...existingKeys.split('\n').map(k => k.trim())] : keys;
-            const uniqueKeys = [...new Set(allKeys)];
-            
-            keysTextarea.value = uniqueKeys.join('\n');
-            
-            // Show success message
-            extractedCountSpan.textContent = keys.length;
-            extractedKeysInfo.style.display = 'block';
-            
-            showNotification(`Successfully extracted ${keys.length} API keys from .env file`, 'success');
-        } else {
-            showNotification('No API keys found in .env file', 'warning');
-        }
-    };
-    
-    reader.readAsText(file);
-}
 
-function parseEnvFile(content) {
-    const keys = [];
-    const lines = content.split('\n');
-    
-    for (const line of lines) {
-        // Skip empty lines and comments
-        const trimmedLine = line.trim();
-        if (!trimmedLine || trimmedLine.startsWith('#')) {
-            continue;
-        }
-        
-        // Parse key-value pairs
-        const equalIndex = trimmedLine.indexOf('=');
-        if (equalIndex === -1) continue;
-        
-        const key = trimmedLine.substring(0, equalIndex).trim();
-        const value = trimmedLine.substring(equalIndex + 1).trim();
-        
-        // Check if the variable name contains 'key' (case insensitive)
-        if (key.toLowerCase().includes('key')) {
-            // Handle comma-separated values
-            const commaSeparatedKeys = value.split(',').map(k => k.trim()).filter(k => k);
-            keys.push(...commaSeparatedKeys);
-        }
-    }
-    
-    return keys;
-}
+    reader.onload = function(event) {
+        const content = event.target.result;
 
-// Proxy Tester Functions
-async function testProxy() {
-    const publicKey = publicKeyInput.value.trim();
-    const rotationMode = rotationModeSelect.value;
-    const method = requestMethodSelect.value;
-    
-    if (!publicKey) {
-        showNotification('Please enter a public API key', 'error');
-        return;
-    }
-    
-    // Show loading state
-    jsonResponsePre.textContent = 'Loading...';
-    copyResponseBtn.style.display = 'none';
-    
-    try {
-        const response = await fetch('/api/proxy', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': publicKey
+        // Parse .env lines
+        const lines = content.split("\n");
+        let extractedKeys = [];
+
+        lines.forEach(line => {
+            line = line.trim();
+
+            // Skip empty lines or comments
+            if (!line || line.startsWith("#")) return;
+
+            // Process key=value format
+            const equalIndex = line.indexOf("=");
+            if (equalIndex === -1) return;
+
+            const key = line.substring(0, equalIndex).trim();
+            const value = line.substring(equalIndex + 1).trim();
+
+            if (!value) return;
+
+            // If API_KEYS=key1,key2,key3
+            if (key === "API_KEYS") {
+                extractedKeys.push(...value.split(",").map(v => v.trim()));
+            }
+            // If single keys (example: KEY1=xxxx)
+            else if (key.toLowerCase().includes("key")) {
+                extractedKeys.push(value.trim());
             }
         });
-        
-        const data = await response.json();
-        
-        // Format and display the response
-        jsonResponsePre.textContent = JSON.stringify(data, null, 2);
-        copyResponseBtn.style.display = 'inline-flex';
-        
-        if (response.ok) {
-            showNotification('Proxy request successful!', 'success');
+
+        if (extractedKeys.length > 0) {
+            // Get existing keys and merge with extracted ones
+            const existingKeys = document.getElementById("multiKeys").value.trim();
+            const allKeys = existingKeys ? 
+                [...new Set([...extractedKeys, ...existingKeys.split("\n").map(k => k.trim())])] : 
+                extractedKeys;
+            
+            document.getElementById("multiKeys").value = allKeys.join("\n");
+            showNotification(`${extractedKeys.length} API keys loaded from .env file!`, "success");
         } else {
-            showNotification(`Proxy request failed: ${data.error || 'Unknown error'}`, 'error');
+            showNotification("No API keys found in this .env file.", "warning");
         }
         
-    } catch (error) {
-        console.error('Proxy test error:', error);
-        const errorData = {
-            error: 'Network Error',
-            message: error.message,
-            timestamp: new Date().toISOString()
-        };
-        jsonResponsePre.textContent = JSON.stringify(errorData, null, 2);
-        showNotification('Failed to connect to proxy server', 'error');
-    }
-}
+        // Clear the file input
+        fileInput.value = '';
+    };
 
-// Utility Functions
-function clearInput(inputId) {
-    document.getElementById(inputId).value = '';
-    showNotification('Input cleared', 'info');
-}
-
-function clearProxyResults() {
-    publicKeyInput.value = '';
-    rotationModeSelect.value = 'round';
-    requestMethodSelect.value = 'GET';
-    jsonResponsePre.textContent = '{}';
-    copyResponseBtn.style.display = 'none';
-    showNotification('Proxy results cleared', 'info');
-}
-
-async function copyToClipboard(elementId) {
-    const element = document.getElementById(elementId);
-    const text = element.value || element.textContent;
-    
-    if (!text || text === '{}' || text === 'Loading...') {
-        showNotification('Nothing to copy', 'warning');
-        return;
-    }
-    
-    try {
-        await navigator.clipboard.writeText(text);
-        showNotification('Copied to clipboard!', 'success');
-    } catch (err) {
-        // Fallback for older browsers
-        if (element.tagName === 'TEXTAREA') {
-            element.select();
-            document.execCommand('copy');
-        } else {
-            // Create temporary textarea
-            const tempTextarea = document.createElement('textarea');
-            tempTextarea.value = text;
-            document.body.appendChild(tempTextarea);
-            tempTextarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(tempTextarea);
-        }
-        showNotification('Copied to clipboard!', 'success');
-    }
+    reader.readAsText(file);
 }
 
 // Notification System
@@ -348,9 +234,9 @@ document.head.appendChild(style);
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
-    // Set initial placeholder text
-    if (keysTextarea) {
-        keysTextarea.placeholder = `Example API keys:
+    // Set placeholder text
+    if (multiKeysTextarea) {
+        multiKeysTextarea.placeholder = `Example API keys:
 sk-1234567890abcdef
 sk-fedcba0987654321
 sk-abcdef1234567890
@@ -359,20 +245,38 @@ Or upload a .env file to automatically extract API keys...`;
     }
     
     // Add fade-in animation to cards
-    const cards = document.querySelectorAll('.fade-in');
+    const cards = document.querySelectorAll('.card');
     cards.forEach((card, index) => {
         card.style.animationDelay = `${index * 0.1}s`;
     });
     
-    // Log initialization
-    console.log('Multi API Key Tool initialized successfully');
+    console.log('API Key Combiner initialized successfully');
 });
 
-// Handle legacy DOM elements if they exist
-if (typeof generateBtn !== 'undefined') {
-    generateBtn.addEventListener('click', combineKeys);
-}
-
-if (typeof copyBtn !== 'undefined') {
-    copyBtn.addEventListener('click', () => copyToClipboard('combinedOutput'));
-}
+// Drag and drop functionality for .env files (optional enhancement)
+document.addEventListener('DOMContentLoaded', function() {
+    const multiKeysCard = document.querySelector('.card');
+    
+    if (multiKeysCard) {
+        multiKeysCard.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            multiKeysCard.style.background = 'rgba(255, 255, 255, 0.12)';
+        });
+        
+        multiKeysCard.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            multiKeysCard.style.background = 'rgba(255, 255, 255, 0.08)';
+        });
+        
+        multiKeysCard.addEventListener('drop', (e) => {
+            e.preventDefault();
+            multiKeysCard.style.background = 'rgba(255, 255, 255, 0.08)';
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].name.endsWith('.env')) {
+                envFileInput.files = files;
+                readEnvFile();
+            }
+        });
+    }
+});
